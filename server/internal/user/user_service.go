@@ -2,6 +2,9 @@ package user
 
 import (
 	"context"
+	"errors"
+	"fmt"
+	"github.com/golang-jwt/jwt/v4"
 	"go-chat/server/util"
 	"strconv"
 	"time"
@@ -46,4 +49,46 @@ func (s *service) CreateUser(c context.Context, req *CreateUserReq) (*CreateUser
 	}
 
 	return res, nil
+}
+
+type MyJWTClaims struct {
+	ID       string `json:"id"`
+	Username string `json:"username"`
+	jwt.RegisteredClaims
+}
+
+func (s *service) Login(c context.Context, req *LoginUserReq) (*LoginUserRes, error) {
+	ctx, cancel := context.WithTimeout(c, s.timeout)
+	defer cancel()
+
+	u, err := s.Repository.GetUserByEmail(ctx, req.Email)
+	if err != nil {
+		return nil, errors.New("Query Failed")
+	}
+
+	err = util.CheckPassword(req.Password, u.Password)
+	if err != nil {
+		fmt.Println(req.Password)
+		fmt.Println(u.Password)
+		return nil, errors.New("Invalid Email or Password")
+	}
+
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, MyJWTClaims{
+		ID:       strconv.Itoa(int(u.ID)),
+		Username: u.Username,
+		RegisteredClaims: jwt.RegisteredClaims{
+			Issuer:    strconv.Itoa(int(u.ID)),
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(24 * time.Hour)),
+		},
+	})
+
+	ss, err := token.SignedString([]byte("fufufufufu"))
+	if err != nil {
+		return &LoginUserRes{}, err
+	}
+	return &LoginUserRes{
+		accesstoken: ss,
+		Username:    u.Username,
+		ID:          strconv.Itoa(int(u.ID)),
+	}, nil
 }
